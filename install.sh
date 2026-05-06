@@ -81,13 +81,18 @@ log "→ tts-env"
 uv pip install --python tts-env/bin/python $PIP_MIRROR torch torchaudio 2>&1 | tail -2
 
 # 6. 装转录工具
-header "[6/8] 安装转录工具（WhisperX + pyannote）"
+header "[6/8] 安装转录工具（MLX GPU 加速 + WhisperX）"
+# MLX-Whisper：Apple Silicon GPU 加速版（推荐默认）
+uv pip install --python whisper-env/bin/python $PIP_MIRROR \
+    mlx-whisper 2>&1 | tail -3
+log "mlx-whisper 完成（GPU 加速）"
+
+# WhisperX：CPU 版本，支持说话人区分
 uv pip install --python whisper-env/bin/python $PIP_MIRROR \
     faster-whisper pyannote.audio pandas 2>&1 | tail -3
-# whisperx 部分镜像没有，用官方源
 uv pip install --python whisper-env/bin/python --retries 5 \
     whisperx 2>&1 | tail -3
-log "WhisperX 完成"
+log "WhisperX 完成（CPU + 说话人区分）"
 
 # 7. 装朗读工具
 header "[7/8] 安装朗读工具（Kokoro TTS）"
