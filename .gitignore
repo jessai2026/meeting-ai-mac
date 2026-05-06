@@ -1,0 +1,40 @@
+# Python 虚拟环境（每个用户自己装）
+whisper-env/
+tts-env/
+*-env/
+__pycache__/
+*.pyc
+
+# 用户数据 — 隐私保护
+recordings/
+output/
+*.wav
+*.m4a
+*.mp3
+*.mp4
+*.mov
+*.aac
+
+# 模型文件（太大）
+models/
+*.safetensors
+*.bin
+*.pt
+*.onnx
+
+# 日志
+*.log
+ollama_pull.log
+
+# macOS
+.DS_Store
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 临时文件
+.tmp/
+tmp/
