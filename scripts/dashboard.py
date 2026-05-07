@@ -21,6 +21,19 @@ SCRIPTS_DIR = APP_DIR / "scripts"
 WHISPER_PY = APP_DIR / "whisper-env" / "bin" / "python"
 TTS_PY = APP_DIR / "tts-env" / "bin" / "python"
 
+# 修复 GUI 启动时 PATH 不全的问题
+os.environ["PATH"] = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + os.environ.get("PATH", "")
+
+# 找 ffmpeg 的绝对路径
+def find_executable(name):
+    for prefix in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]:
+        p = Path(prefix) / name
+        if p.exists():
+            return str(p)
+    return name  # fallback
+
+FFMPEG = find_executable("ffmpeg")
+
 for d in (RECORDINGS_DIR, OUTPUT_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
@@ -192,7 +205,7 @@ class MeetingAIDashboard:
 
         # 用 ffmpeg 录默认输入设备（麦克风）
         cmd = [
-            "ffmpeg", "-y",
+            FFMPEG, "-y",
             "-f", "avfoundation",
             "-i", ":0",  # 默认音频输入
             "-ar", "44100", "-ac", "1",
