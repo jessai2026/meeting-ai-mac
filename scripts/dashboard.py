@@ -35,6 +35,42 @@ def find_executable(name):
 
 FFMPEG = find_executable("ffmpeg")
 
+
+def detect_mic_device():
+    """自动找正确的麦克风设备 index（避免 BlackHole 等虚拟驱动）"""
+    try:
+        result = subprocess.run(
+            [FFMPEG, "-f", "avfoundation", "-list_devices", "true", "-i", ""],
+            capture_output=True, text=True, timeout=10
+        )
+        # ffmpeg 把设备列表打到 stderr
+        output = result.stderr
+        audio_section = False
+        candidates = []  # (index, name)
+        for line in output.split("\n"):
+            if "AVFoundation audio devices" in line:
+                audio_section = True
+                continue
+            if audio_section:
+                m = re.search(r"\[(\d+)\]\s+(.+)$", line)
+                if m:
+                    idx, name = int(m.group(1)), m.group(2).strip()
+                    candidates.append((idx, name))
+        # 优先 MacBook Pro Microphone，其次任何不含 BlackHole/Soundflower 的
+        for idx, name in candidates:
+            if "MacBook" in name and "Microphone" in name:
+                return idx, name
+        for idx, name in candidates:
+            if "Microphone" in name and "BlackHole" not in name and "Soundflower" not in name:
+                return idx, name
+        # 回退到 0
+        return 0, candidates[0][1] if candidates else "default"
+    except Exception:
+        return 0, "default"
+
+
+MIC_DEVICE_IDX, MIC_DEVICE_NAME = detect_mic_device()
+
 for d in (RECORDINGS_DIR, OUTPUT_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
@@ -89,10 +125,18 @@ class MeetingAIDashboard:
                                      bg="#ffffff", fg="#1d1d1f")
         self.timer_label.pack(side="left", padx=20)
 
-        self.status_label = tk.Label(rec_frame, text="● 待机",
+        # 右侧：状态 + 当前麦克风提示
+        right_box = tk.Frame(rec_frame, bg="#ffffff")
+        right_box.pack(side="right")
+        self.status_label = tk.Label(right_box, text="● 待机",
                                       font=("PingFang SC", 13),
                                       bg="#ffffff", fg="#34c759")
-        self.status_label.pack(side="right")
+        self.status_label.pack(anchor="e")
+        mic_hint = tk.Label(right_box,
+                             text=f"🎤 {MIC_DEVICE_NAME[:24]}",
+                             font=("PingFang SC", 10),
+                             bg="#ffffff", fg="#6e6e73")
+        mic_hint.pack(anchor="e")
 
         # === 文件管理区 ===
         files_frame = tk.LabelFrame(self.root, text="  📁 文件管理  ",
@@ -204,11 +248,11 @@ class MeetingAIDashboard:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.recording_file = RECORDINGS_DIR / f"会议_{ts}.wav"
 
-        # 用 ffmpeg 录默认输入设备（麦克风）
+        # 用 ffmpeg 录正确的麦克风设备（不要 BlackHole）
         cmd = [
             FFMPEG, "-y",
             "-f", "avfoundation",
-            "-i", ":0",  # 默认音频输入
+            "-i", f":{MIC_DEVICE_IDX}",  # 自动检测的麦克风
             "-ar", "44100", "-ac", "1",
             str(self.recording_file)
         ]
