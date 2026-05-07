@@ -65,8 +65,12 @@ else
     "$WHISPER_PY" "$SCRIPT_DIR/transcribe_fast.py" "$AUDIO_FILE" "${EXTRA_ARGS[@]}"
 fi
 
-# 找最新生成的逐字稿
-TRANSCRIPT_OUT=$(ls -t "$HOME/meeting-ai/output/"*.txt 2>/dev/null | grep -v "_clean_" | grep -v "_summary_" | head -1)
+# 找最新生成的逐字稿（新结构：output/会议名_时间戳/1-逐字稿.txt）
+TRANSCRIPT_OUT=$(ls -t "$HOME/meeting-ai/output/"*/1-逐字稿.txt 2>/dev/null | head -1)
+# 兼容旧的扁平结构
+if [ -z "$TRANSCRIPT_OUT" ]; then
+    TRANSCRIPT_OUT=$(ls -t "$HOME/meeting-ai/output/"*.txt 2>/dev/null | grep -v "_clean_" | grep -v "_summary_" | head -1)
+fi
 
 if [ -z "$TRANSCRIPT_OUT" ] || [ ! -f "$TRANSCRIPT_OUT" ]; then
     echo "❌ 找不到生成的逐字稿"
@@ -77,7 +81,8 @@ echo ""
 echo "── 步骤 2/2：整理 + 摘要 ──────────────"
 "$WHISPER_PY" "$SCRIPT_DIR/summarize.py" "$TRANSCRIPT_OUT"
 
-SUMMARY_OUT=$(ls -t "$HOME/meeting-ai/output/"*_summary_*.md 2>/dev/null | head -1)
+SUMMARY_OUT=$(ls -t "$HOME/meeting-ai/output/"*/3-纪要.md 2>/dev/null | head -1)
+[ -z "$SUMMARY_OUT" ] && SUMMARY_OUT=$(ls -t "$HOME/meeting-ai/output/"*_summary_*.md 2>/dev/null | head -1)
 
 if $DO_READ && [ -n "$SUMMARY_OUT" ]; then
     echo ""

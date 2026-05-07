@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 import os
+import re
 import signal
 from pathlib import Path
 from datetime import datetime
@@ -262,7 +263,7 @@ class MeetingAIDashboard:
     # ---------- 文件管理 ----------
 
     def refresh_files(self):
-        # 录音
+        # 录音文件
         self.rec_listbox.delete(0, tk.END)
         rec_files = sorted(RECORDINGS_DIR.glob("*"),
                            key=lambda p: p.stat().st_mtime, reverse=True)
@@ -272,15 +273,22 @@ class MeetingAIDashboard:
                 t = datetime.fromtimestamp(f.stat().st_mtime).strftime("%m-%d %H:%M")
                 self.rec_listbox.insert(tk.END, f"{t}  {f.name}  ({size_mb:.1f} MB)")
 
-        # 输出
+        # 输出文件 — 改为按会议文件夹显示
         self.out_listbox.delete(0, tk.END)
-        out_files = sorted(OUTPUT_DIR.glob("*"),
-                           key=lambda p: p.stat().st_mtime, reverse=True)
-        for f in out_files:
-            if f.is_file() and f.suffix.lower() in {".txt", ".srt", ".md", ".mp3", ".wav"}:
-                size_kb = f.stat().st_size / 1024
-                t = datetime.fromtimestamp(f.stat().st_mtime).strftime("%m-%d %H:%M")
-                self.out_listbox.insert(tk.END, f"{t}  {f.name}  ({size_kb:.0f} KB)")
+        meeting_dirs = sorted([d for d in OUTPUT_DIR.iterdir() if d.is_dir()],
+                              key=lambda p: p.stat().st_mtime, reverse=True)
+        for d in meeting_dirs:
+            files_in = list(d.iterdir())
+            has_transcript = any("逐字稿" in f.name or f.name.endswith(".txt") for f in files_in)
+            has_summary = any("纪要" in f.name or f.name.endswith(".md") for f in files_in)
+            has_audio = any(f.suffix.lower() == ".mp3" for f in files_in)
+            badges = []
+            badges.append("📝 逐字稿" if has_transcript else "・・・・")
+            badges.append("📋 纪要" if has_summary else "・・・")
+            badges.append("🔊 朗读" if has_audio else "・・・")
+            t = datetime.fromtimestamp(d.stat().st_mtime).strftime("%m-%d %H:%M")
+            line = f"{t}  📁 {d.name}    [{' '.join(badges)}]"
+            self.out_listbox.insert(tk.END, line)
 
     def get_current_listbox(self):
         idx = self.tabs.index(self.tabs.select())
@@ -289,20 +297,38 @@ class MeetingAIDashboard:
         return self.out_listbox, OUTPUT_DIR
 
     def get_selected_file(self):
+        """录音 tab 返回音频文件，输出 tab 返回会议文件夹"""
         listbox, dirpath = self.get_current_listbox()
         sel = listbox.curselection()
         if not sel:
-            messagebox.showinfo("提示", "请先选中一个文件")
+            messagebox.showinfo("提示", "请先选中一项")
             return None
         line = listbox.get(sel[0])
-        # 解析文件名（在两个空格中间）
-        parts = line.split("  ")
-        if len(parts) < 2:
+        idx = self.tabs.index(self.tabs.select())
+
+        if idx == 0:  # 录音 tab → 解析文件名
+            parts = line.split("  ")
+            if len(parts) < 2:
+                return None
+            return dirpath / parts[1].strip()
+        else:  # 输出 tab → 解析文件夹名
+            # 格式："05-08 00:57  📁 会议_xxx    [...]"
+            m = re.search(r"📁\s+(.+?)\s+\[", line)
+            if m:
+                return dirpath / m.group(1)
             return None
-        name = parts[1].strip()
-        return dirpath / name
 
     def open_current_folder(self):
+        """录音 tab：打开 recordings/；输出 tab：打开选中的会议文件夹"""
+        idx = self.tabs.index(self.tabs.select())
+        if idx == 1:
+            # 输出 tab — 如果有选中的会议，打开那个会议文件夹
+            sel = self.out_listbox.curselection()
+            if sel:
+                target = self.get_selected_file()  # 文件夹
+                if target and target.exists():
+                    subprocess.run(["open", str(target)])
+                    return
         _, dirpath = self.get_current_listbox()
         subprocess.run(["open", str(dirpath)])
 
@@ -323,8 +349,16 @@ class MeetingAIDashboard:
         f = self.get_selected_file()
         if not f or not f.exists():
             return
-        if messagebox.askyesno("确认删除", f"确认删除 {f.name}？"):
-            f.unlink()
+        if f.is_dir():
+            msg = f"确认删除会议文件夹 {f.name} 及其内全部文件？\n（这个操作不能撤销）"
+        else:
+            msg = f"确认删除 {f.name}？"
+        if messagebox.askyesno("确认删除", msg):
+            if f.is_dir():
+                import shutil
+                shutil.rmtree(f)
+            else:
+                f.unlink()
             self.refresh_files()
             self.bottom_status.config(text=f"🗑️ 已删除 {f.name}")
 
@@ -372,9 +406,20 @@ class MeetingAIDashboard:
         f = self.get_selected_file()
         if not f or not f.exists():
             return
-        if f.suffix.lower() not in {".txt", ".md"}:
-            messagebox.showinfo("提示", "请在「输出文件」标签页选 .txt 或 .md")
-            return
+
+        # 输出 tab 选中的是文件夹 → 自动找里面的 3-纪要.md
+        if f.is_dir():
+            target = f / "3-纪要.md"
+            if not target.exists():
+                # 退而求其次找 2-清理版.txt 或 1-逐字稿.txt
+                for fallback in ["2-清理版.txt", "1-逐字稿.txt"]:
+                    if (f / fallback).exists():
+                        target = f / fallback
+                        break
+                else:
+                    messagebox.showinfo("提示", "这个会议文件夹里还没有可朗读的文本")
+                    return
+            f = target
 
         if lang == "en":
             cmd = [str(SCRIPTS_DIR / "translate-read.sh"), str(f)]

@@ -77,11 +77,13 @@ def main():
     segments = result.get("segments", [])
     print(f"   ✓ 完成！检测语言：{detected_lang}，{len(segments)} 个片段，耗时 {elapsed:.1f} 秒", flush=True)
 
-    # 写文件
+    # 每场会议一个文件夹（与音频同名 + 时间戳）
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     stem = audio_path.stem
-    out_txt = output_dir / f"{stem}_{timestamp}.txt"
-    out_srt = output_dir / f"{stem}_{timestamp}.srt"
+    meeting_dir = output_dir / f"{stem}_{timestamp}"
+    meeting_dir.mkdir(parents=True, exist_ok=True)
+    out_txt = meeting_dir / "1-逐字稿.txt"
+    out_srt = meeting_dir / "1-字幕.srt"
 
     with open(out_txt, "w", encoding="utf-8") as f:
         f.write(f"# 逐字稿 — {audio_path.name}\n")

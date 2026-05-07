@@ -81,11 +81,13 @@ def main():
         print(f"[4/4] 跳过说话人区分（未提供 HF 令牌）", flush=True)
         print(f"      如需区分说话人，运行：~/meeting-ai/scripts/setup-hf-token.sh", flush=True)
 
-    # 生成文件
+    # 每场会议一个文件夹
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     stem = audio_path.stem
-    out_txt = output_dir / f"{stem}_{timestamp}.txt"
-    out_srt = output_dir / f"{stem}_{timestamp}.srt"
+    meeting_dir = output_dir / f"{stem}_{timestamp}"
+    meeting_dir.mkdir(parents=True, exist_ok=True)
+    out_txt = meeting_dir / "1-逐字稿.txt"
+    out_srt = meeting_dir / "1-字幕.srt"
 
     with open(out_txt, "w", encoding="utf-8") as f:
         f.write(f"# 逐字稿 — {audio_path.name}\n")

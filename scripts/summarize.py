@@ -95,8 +95,18 @@ def main():
 
     transcript = transcript_path.read_text(encoding="utf-8")
     output_dir = Path(args.output_dir)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    stem = transcript_path.stem
+
+    # 智能定位输出位置：
+    # - 如果输入文件已经在某个会议子文件夹里 → 输出到同一文件夹
+    # - 否则在 output 下创建新的会议文件夹
+    if transcript_path.parent != output_dir and transcript_path.parent.parent == output_dir:
+        # 已经在子文件夹里
+        meeting_dir = transcript_path.parent
+    else:
+        # 兼容旧的扁平结构：建一个新文件夹
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        meeting_dir = output_dir / f"{transcript_path.stem}_{timestamp}"
+        meeting_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 1: 去口水词
     if args.skip_clean:
@@ -105,14 +115,14 @@ def main():
     else:
         print("[1/2] 去口水词 + 修正转录错误...", flush=True)
         clean_text = call_ollama(CLEAN_PROMPT.format(transcript=transcript), model)
-        clean_path = output_dir / f"{stem}_clean_{timestamp}.txt"
+        clean_path = meeting_dir / "2-清理版.txt"
         clean_path.write_text(clean_text, encoding="utf-8")
         print(f"      清洗版本已保存：{clean_path}")
 
     # Step 2: 生成摘要
     print("[2/2] 生成会议纪要...", flush=True)
     summary = call_ollama(SUMMARY_PROMPT.format(transcript=clean_text), model)
-    summary_path = output_dir / f"{stem}_summary_{timestamp}.md"
+    summary_path = meeting_dir / "3-纪要.md"
     summary_path.write_text(
         f"# 会议纪要\n**来源文件：** {transcript_path.name}  \n**生成时间：** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  \n**使用模型：** {model}\n\n---\n\n{summary}\n",
         encoding="utf-8"
