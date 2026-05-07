@@ -18,7 +18,13 @@ from pathlib import Path
 from datetime import datetime
 
 # macOS 内置声音池（按角色顺序分配）
-MACOS_VOICES_ZH = ["Tingting", "Sinji", "Meijia"]   # 中文女声/男声
+# 注意：macOS 26 移除了 Sinji/Meijia/Shanshan，统一改用 (Chinese (China mainland)) 这一组
+MACOS_VOICES_ZH = [
+    "Tingting",                                # 女声 - 普通话
+    "Eddy (Chinese (China mainland))",         # 男声
+    "Sandy (Chinese (China mainland))",        # 女声
+    "Reed (Chinese (China mainland))",         # 男声
+]
 MACOS_VOICES_EN = ["Daniel", "Karen", "Moira", "Rishi"]
 
 def parse_transcript(text):
@@ -54,10 +60,13 @@ def assign_voices(speakers, lang):
     return {sp: pool[i % len(pool)] for i, sp in enumerate(sorted(set(speakers)))}
 
 def say_segment(text, voice, output_aiff):
-    """用 macOS say 生成音频片段"""
-    cmd = ["say", "-v", voice, "-o", output_aiff,
-           "--data-format=LEF32@22050", text]
-    return subprocess.run(cmd, capture_output=True).returncode == 0
+    """用 macOS say 生成音频片段（macOS 26 默认 AIFF 格式即可）"""
+    cmd = ["say", "-v", voice, "-o", output_aiff, text]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"      say 失败: {r.stderr.strip()}", flush=True)
+        return False
+    return True
 
 def kokoro_segment(text, voice_name, output_wav, model, voices):
     """用 Kokoro 生成音频片段（英文质量较好）"""
@@ -106,8 +115,14 @@ def main():
     if not transcript_path.exists():
         print(f"错误：文件不存在：{transcript_path}", file=sys.stderr); sys.exit(1)
 
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    base_output = Path(args.output_dir)
+    base_output.mkdir(parents=True, exist_ok=True)
+
+    # 智能放置：如果输入在某个会议子文件夹里，MP3 也放进同一文件夹
+    if transcript_path.parent != base_output and transcript_path.parent.parent == base_output:
+        output_dir = transcript_path.parent
+    else:
+        output_dir = base_output
 
     text = transcript_path.read_text(encoding="utf-8")
     segments = parse_transcript(text)
@@ -163,7 +178,11 @@ def main():
     if not audio_files:
         print("错误：没有生成任何音频", file=sys.stderr); sys.exit(1)
 
-    out_mp3 = output_dir / f"{transcript_path.stem}_reading_{timestamp}.mp3"
+    # 在会议文件夹里用统一名字，否则用带时间戳的名字
+    if output_dir != base_output:
+        out_mp3 = output_dir / "4-朗读.mp3"
+    else:
+        out_mp3 = output_dir / f"{transcript_path.stem}_reading_{timestamp}.mp3"
     print(f"\n合并 {len(audio_files)} 个片段为 MP3 ...", flush=True)
     merge_audio_files(audio_files, out_mp3)
 
